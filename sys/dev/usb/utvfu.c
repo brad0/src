@@ -1788,6 +1788,10 @@ utvfu_streamon(void *v, int type)
 	struct utvfu_softc *sc = v;
 	usbd_status error;
 
+	/* already streaming: nothing to do */
+	if (sc->sc_iface.pipeh != NULL)
+		return (0);
+
 	/* open video stream pipe */
 	error = utvfu_vs_open(sc);
 	if (error != USBD_NORMAL_COMPLETION)
