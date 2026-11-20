@@ -1664,9 +1664,15 @@ uvideo_vs_set_alt(struct uvideo_softc *sc, struct usbd_interface *ifaceh,
 	usb_interface_descriptor_t *id;
 	usb_endpoint_descriptor_t *ed;
 	int diff, best_diff = INT_MAX, bulk_endpoint;
+	int best_endpoint, best_alt;
 	usbd_status error;
-	uint32_t psize;
+	uint32_t psize, best_psize;
 	uint8_t ep_type;
+
+	/* keep the current values until the new setting is in use */
+	best_endpoint = sc->sc_vs_cur->endpoint;
+	best_alt = sc->sc_vs_cur->curalt;
+	best_psize = sc->sc_vs_cur->psize;
 
 	usbd_desc_iter_init(sc->sc_udev, &iter);
 	desc = usbd_desc_iter_next(&iter);
@@ -1715,9 +1721,9 @@ uvideo_vs_set_alt(struct uvideo_softc *sc, struct usbd_interface *ifaceh,
 			goto next;
 		if (diff < best_diff) {
 			best_diff = diff;
-			sc->sc_vs_cur->endpoint = ed->bEndpointAddress;
-			sc->sc_vs_cur->curalt = id->bAlternateSetting;
-			sc->sc_vs_cur->psize = psize;
+			best_endpoint = ed->bEndpointAddress;
+			best_alt = id->bAlternateSetting;
+			best_psize = psize;
 			if (diff == 0)
 				break;
 		}
@@ -1727,15 +1733,19 @@ next:
 
 	DPRINTF(1, "%s: set alternate iface to ", DEVNAME(sc));
 	DPRINTF(1, "bAlternateSetting=0x%02x psize=%d max_packet_size=%d\n",
-	    sc->sc_vs_cur->curalt, sc->sc_vs_cur->psize, max_packet_size);
+	    best_alt, best_psize, max_packet_size);
 
 	/* set alternate video stream interface */
-	error = usbd_set_interface(ifaceh, sc->sc_vs_cur->curalt);
+	error = usbd_set_interface(ifaceh, best_alt);
 	if (error) {
 		printf("%s: could not set alternate interface %d!\n",
-		    DEVNAME(sc), sc->sc_vs_cur->curalt);
+		    DEVNAME(sc), best_alt);
 		return (USBD_INVAL);
 	}
+
+	sc->sc_vs_cur->endpoint = best_endpoint;
+	sc->sc_vs_cur->curalt = best_alt;
+	sc->sc_vs_cur->psize = best_psize;
 
 	return (USBD_NORMAL_COMPLETION);
 }
@@ -4141,9 +4151,16 @@ uvideo_streamon(void *v, int type)
 	struct uvideo_softc *sc = v;
 	usbd_status error;
 
+	/* already streaming: nothing to do */
+	if (sc->sc_vs_cur->pipeh != NULL)
+		return (0);
+
 	error = uvideo_vs_init(sc);
-	if (error != USBD_NORMAL_COMPLETION)
+	if (error != USBD_NORMAL_COMPLETION) {
+		/* don't leave the pipe open: it would look like a stream */
+		uvideo_vs_close(sc);
 		return (EINVAL);
+	}
 
 	if (sc->sc_vs_cur->bulk_endpoint)
 		uvideo_vs_start_bulk(sc);
