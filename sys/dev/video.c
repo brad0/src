@@ -55,6 +55,7 @@ struct video_softc {
 	struct device		*sc_dev;	/* hardware device struct */
 	const struct video_hw_if *hw_if;	/* hardware interface */
 	char			 sc_dying;	/* device detached */
+	int			 sc_refcnt;	/* threads in the driver */
 	struct process		*sc_owner;	/* owner process */
 	uint8_t			 sc_open;	/* device opened */
 
@@ -73,6 +74,8 @@ struct video_softc {
 };
 
 int	videoprobe(struct device *, void *, void *);
+void	video_enter(struct video_softc *);
+void	video_leave(struct video_softc *);
 void	videoattach(struct device *, struct device *, void *);
 int	videodetach(struct device *, int);
 int	videoactivate(struct device *, int);
@@ -143,6 +146,12 @@ videoopen(dev_t dev, int flags, int fmt, struct proc *p)
 	sc = (struct video_softc *)device_lookup(&video_cd, unit);
 	if (sc == NULL)
 		return (ENXIO);
+	video_enter(sc);
+
+	if (sc->sc_dying) {
+		error = ENXIO;
+		goto done;
+	}
 
 	if (sc->sc_open) {
 		DPRINTF(1, "%s: device already open\n", __func__);
@@ -162,6 +171,7 @@ videoopen(dev_t dev, int flags, int fmt, struct proc *p)
 	}
 
 done:
+	video_leave(sc);
 	device_unref(&sc->dev);
 	return (error);
 }
@@ -180,6 +190,7 @@ videoclose(dev_t dev, int flags, int fmt, struct proc *p)
 	sc = (struct video_softc *)device_lookup(&video_cd, unit);
 	if (sc == NULL)
 		return (ENXIO);
+	video_enter(sc);
 
 	if (!sc->sc_open) {
 		error = ENXIO;
@@ -190,6 +201,7 @@ videoclose(dev_t dev, int flags, int fmt, struct proc *p)
 	sc->sc_open = 0;
 
 done:
+	video_leave(sc);
 	device_unref(&sc->dev);
 	return (error);
 }
@@ -207,6 +219,7 @@ videoread(dev_t dev, struct uio *uio, int ioflag)
 	sc = (struct video_softc *)device_lookup(&video_cd, unit);
 	if (sc == NULL)
 		return (ENXIO);
+	video_enter(sc);
 
 	if (sc->sc_dying) {
 		error = EIO;
@@ -259,6 +272,7 @@ videoread(dev_t dev, struct uio *uio, int ioflag)
 	DPRINTF(1, "uiomove successfully done (%zu bytes)\n", size);
 
 done:
+	video_leave(sc);
 	device_unref(&sc->dev);
 	return (error);
 }
@@ -276,8 +290,9 @@ videoioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	sc = (struct video_softc *)device_lookup(&video_cd, unit);
 	if (sc == NULL)
 		return (ENXIO);
+	video_enter(sc);
 
-	if (sc->hw_if == NULL) {
+	if (sc->sc_dying || sc->hw_if == NULL) {
 		error = ENXIO;
 		goto done;
 	}
@@ -333,8 +348,10 @@ videoioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 			    (struct v4l2_frmivalenum *)data);
 		break;
 	case VIDIOC_S_FMT:
-		if (!(flags & FWRITE))
-			return (EACCES);
+		if (!(flags & FWRITE)) {
+			error = EACCES;
+			break;
+		}
 		if (sc->hw_if->s_fmt)
 			error = (sc->hw_if->s_fmt)(sc->hw_hdl,
 			    (struct v4l2_format *)data);
@@ -431,6 +448,7 @@ videoioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	}
 
 done:
+	video_leave(sc);
 	device_unref(&sc->dev);
 	return (error);
 }
@@ -558,6 +576,7 @@ videokqfilter(dev_t dev, struct knote *kn)
 	sc = (struct video_softc *)device_lookup(&video_cd, unit);
 	if (sc == NULL)
 		return (ENXIO);
+	video_enter(sc);
 
 	if (sc->sc_dying) {
 		error = ENXIO;
@@ -583,14 +602,17 @@ videokqfilter(dev_t dev, struct knote *kn)
 	 * before now.
 	 */
 	if (sc->sc_vidmode == VIDMODE_NONE && sc->hw_if->start_read) {
-		if (sc->hw_if->start_read(sc->hw_hdl))
-			return (ENXIO);
+		if (sc->hw_if->start_read(sc->hw_hdl)) {
+			error = ENXIO;
+			goto done;
+		}
 		sc->sc_vidmode = VIDMODE_READ;
 	}
 
 	klist_insert(&sc->sc_rklist, kn);
 
 done:
+	video_leave(sc);
 	device_unref(&sc->dev);
 	return (error);
 }
@@ -683,6 +705,16 @@ videodetach(struct device *self, int flags)
 	struct video_softc *sc = (struct video_softc *)self;
 	int maj, mn;
 
+	/*
+	 * Wait for the threads still in the driver, such as an ioctl
+	 * sleeping on a USB request, before the hardware driver frees
+	 * what they use.  Wake up read() sleepers: they see sc_dying.
+	 */
+	sc->sc_dying = 1;
+	wakeup(sc);
+	while (sc->sc_refcnt > 0)
+		tsleep_nsec(&sc->sc_refcnt, PWAIT, "vidref", INFSLP);
+
 	/* locate the major number */
 	for (maj = 0; maj < nchrdev; maj++)
 		if (cdevsw[maj].d_open == videoopen)
@@ -698,6 +730,23 @@ videodetach(struct device *self, int flags)
 	free(sc->sc_fbuffer, M_DEVBUF, sc->sc_fbufferlen);
 
 	return (0);
+}
+
+/*
+ * Count the threads in the driver, so videodetach() can wait for them.
+ * Called with the kernel lock held.
+ */
+void
+video_enter(struct video_softc *sc)
+{
+	sc->sc_refcnt++;
+}
+
+void
+video_leave(struct video_softc *sc)
+{
+	if (--sc->sc_refcnt == 0 && sc->sc_dying)
+		wakeup(&sc->sc_refcnt);
 }
 
 int
