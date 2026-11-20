@@ -1732,8 +1732,8 @@ next:
 	/* set alternate video stream interface */
 	error = usbd_set_interface(ifaceh, sc->sc_vs_cur->curalt);
 	if (error) {
-		printf("%s: could not set alternate interface %d!\n",
-		    DEVNAME(sc), sc->sc_vs_cur->curalt);
+		printf("%s: could not set alternate interface %d: %s\n",
+		    DEVNAME(sc), sc->sc_vs_cur->curalt, usbd_errstr(error));
 		return (USBD_INVAL);
 	}
 
