@@ -151,7 +151,7 @@ usbd_status	uvideo_vs_parse_desc_alt(struct uvideo_softc *, int, int, int);
 usbd_status	uvideo_vs_set_alt(struct uvideo_softc *,
 		    struct usbd_interface *, int);
 int		uvideo_desc_len(const usb_descriptor_t *, int, int, int, int);
-void		uvideo_find_res(struct uvideo_softc *, int, int, int,
+void		uvideo_find_res(struct uvideo_softc *, int, uint32_t, uint32_t,
 		    struct uvideo_res *);
 usbd_status	uvideo_vs_negotiation(struct uvideo_softc *, int);
 usbd_status	uvideo_vs_set_probe(struct uvideo_softc *, uint8_t *);
@@ -1781,19 +1781,21 @@ uvideo_desc_len(const usb_descriptor_t *desc,
  * return it.
  */
 void
-uvideo_find_res(struct uvideo_softc *sc, int idx, int width, int height,
-    struct uvideo_res *r)
+uvideo_find_res(struct uvideo_softc *sc, int idx, uint32_t width,
+    uint32_t height, struct uvideo_res *r)
 {
-	int i, w, h, diff, diff_best, size_want, size_is;
+	uint64_t diff, diff_best, size_want, size_is;
 	struct usb_video_frame_desc *frame;
+	int i, w, h;
 
-	size_want = width * height;
+	/* in 64 bits: width * height of a huge request overflows an int */
+	size_want = (uint64_t)width * height;
 
 	for (i = 0; i < sc->sc_fmtgrp[idx].frame_num; i++) {
 		frame = sc->sc_fmtgrp[idx].frame[i];
 		w = UGETW(UVIDEO_FRAME_FIELD(frame, wWidth));
 		h = UGETW(UVIDEO_FRAME_FIELD(frame, wHeight));
-		size_is = w * h;
+		size_is = (uint64_t)w * h;
 		if (size_is > size_want)
 			diff = size_is - size_want;
 		else
