@@ -153,6 +153,7 @@ usbd_status	uvideo_vs_set_alt(struct uvideo_softc *,
 int		uvideo_desc_len(const usb_descriptor_t *, int, int, int, int);
 void		uvideo_find_res(struct uvideo_softc *, int, int, int,
 		    struct uvideo_res *);
+uint32_t	uvideo_frame_size(struct uvideo_softc *, int, int);
 usbd_status	uvideo_vs_negotiation(struct uvideo_softc *, int);
 usbd_status	uvideo_vs_set_probe(struct uvideo_softc *, uint8_t *);
 usbd_status	uvideo_vs_get_probe(struct uvideo_softc *, uint8_t *, uint8_t);
@@ -4408,6 +4409,10 @@ uvideo_try_fmt(void *v, struct v4l2_format *fmt)
 	if (found == 0)
 		return (EINVAL);
 
+	/* check if the format descriptor contains frame descriptors */
+	if (sc->sc_fmtgrp[i].frame_num == 0)
+		return (EINVAL);
+
 	/* search requested frame resolution */
 	uvideo_find_res(sc, i, fmt->fmt.pix.width, fmt->fmt.pix.height, &r);
 
@@ -4418,10 +4423,51 @@ uvideo_try_fmt(void *v, struct v4l2_format *fmt)
 	DPRINTF(1, "%s: %s: offered width=%d, height=%d\n",
 	    DEVNAME(sc), __func__, r.width, r.height);
 
-	/* tell our frame buffer size */
-	fmt->fmt.pix.sizeimage = sc->sc_frame_buffer.buf_size;
+	/* tell the frame buffer size of the offered format */
+	fmt->fmt.pix.sizeimage = uvideo_frame_size(sc, i, r.fidx);
 
 	return (0);
+}
+
+/*
+ * Frame buffer size for a format and frame, without negotiating with
+ * the device.  Used by VIDIOC_TRY_FMT, which must not change the
+ * current format.
+ */
+uint32_t
+uvideo_frame_size(struct uvideo_softc *sc, int idx, int fidx)
+{
+	struct uvideo_format_group *fmtgrp = &sc->sc_fmtgrp[idx];
+	struct usb_video_frame_desc *frame = fmtgrp->frame[fidx];
+	uint64_t width, height, size = 0;
+
+	/* for the current format, use the size the device reported */
+	if (fmtgrp == sc->sc_fmtgrp_cur && frame == fmtgrp->frame_cur &&
+	    UGETDW(sc->sc_desc_probe.dwMaxVideoFrameSize) != 0)
+		return (UGETDW(sc->sc_desc_probe.dwMaxVideoFrameSize));
+
+	width = UGETW(UVIDEO_FRAME_FIELD(frame, wWidth));
+	height = UGETW(UVIDEO_FRAME_FIELD(frame, wHeight));
+
+	switch (frame->bDescriptorSubtype) {
+	case UDESCSUB_VS_FRAME_UNCOMPRESSED:
+		size = width * height *
+		    fmtgrp->format->u.uc.bBitsPerPixel / NBBY;
+		break;
+	case UDESCSUB_VS_FRAME_MJPEG:
+		size = UGETDW(frame->u.uc.dwMaxVideoFrameBufferSize);
+		break;
+	case UDESCSUB_VS_FRAME_FRAME_BASED:
+		if (!fmtgrp->format->u.fb.bVariableSize)
+			size = UGETDW(frame->u.fb.dwBytesPerLine) * height;
+		break;
+	}
+
+	/* the descriptors give no size: assume 2 bytes per pixel */
+	if (size == 0)
+		size = width * height * 2;
+
+	return (MIN(size, UINT32_MAX));
 }
 
 caddr_t
