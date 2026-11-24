@@ -28,7 +28,7 @@ SRCS+=	canceled.c
 
 # syscalls that would be normal...except for cancellation or SIGTHR
 CANCEL=	accept accept4 \
-	close closefrom connect \
+	clock_nanosleep close closefrom connect \
 	fcntl fsync \
 	msgrcv msgsnd msync \
 	nanosleep \

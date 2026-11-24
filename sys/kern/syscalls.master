@@ -261,7 +261,9 @@
 126	STD		{ int sys_setreuid(uid_t ruid, uid_t euid); }
 127	STD		{ int sys_setregid(gid_t rgid, gid_t egid); }
 128	STD		{ int sys_rename(const char *from, const char *to); }
-129	OBSOL		otruncate
+129	STD NOLOCK	{ int sys_clock_nanosleep(clockid_t clock_id, \
+			    int flags, const struct timespec *rqtp, \
+			    struct timespec *rmtp); }
 130	OBSOL		oftruncate
 131	STD NOLOCK	{ int sys_flock(int fd, int how); }
 132	STD		{ int sys_mkfifo(const char *path, mode_t mode); }

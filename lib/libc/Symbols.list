@@ -58,6 +58,7 @@ _thread_sys_chown
 _thread_sys_chroot
 _thread_sys_clock_getres
 _thread_sys_clock_gettime
+_thread_sys_clock_nanosleep
 _thread_sys_clock_settime
 _thread_sys_close
 _thread_sys_closefrom
@@ -262,6 +263,7 @@ chown
 chroot
 clock_getres
 clock_gettime
+clock_nanosleep
 clock_settime
 close
 closefrom

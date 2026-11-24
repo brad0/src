@@ -334,6 +334,7 @@ struct clockrequest;
 void itimer_update(struct clockrequest *, void *, void *);
 
 void	cancel_all_itimers(void);
+void	clock_stepped(void);
 int	settime(const struct timespec *);
 int	ratecheck(struct timeval *, const struct timeval *);
 int	ppsratecheck(struct timeval *, int *, int);

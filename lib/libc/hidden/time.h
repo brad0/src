@@ -30,6 +30,7 @@ PROTO_STD_DEPRECATED(clock);
 PROTO_DEPRECATED(clock_getcpuclockid);
 PROTO_NORMAL(clock_getres);
 PROTO_WRAP(clock_gettime);
+PROTO_CANCEL(clock_nanosleep);
 PROTO_NORMAL(clock_settime);
 PROTO_STD_DEPRECATED(ctime);
 PROTO_DEPRECATED(ctime_r);

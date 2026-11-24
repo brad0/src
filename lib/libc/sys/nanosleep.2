@@ -34,12 +34,20 @@
 .Dt NANOSLEEP 2
 .Os
 .Sh NAME
-.Nm nanosleep
+.Nm nanosleep ,
+.Nm clock_nanosleep
 .Nd high resolution sleep
 .Sh SYNOPSIS
 .In time.h
 .Ft int
 .Fn nanosleep "const struct timespec *timeout" "struct timespec *remainder"
+.Ft int
+.Fo clock_nanosleep
+.Fa "clockid_t clock_id"
+.Fa "int flags"
+.Fa "const struct timespec *timeout"
+.Fa "struct timespec *remainder"
+.Fc
 .Sh DESCRIPTION
 The
 .Fn nanosleep
@@ -51,6 +59,49 @@ even if
 is set with
 .Xr sigaction 2
 for the interrupting signal.
+.Pp
+The
+.Fn clock_nanosleep
+function is like
+.Fn nanosleep ,
+but measures the sleep against the clock specified by
+.Fa clock_id .
+The following clocks are supported:
+.Dv CLOCK_REALTIME ,
+.Dv CLOCK_MONOTONIC ,
+.Dv CLOCK_BOOTTIME
+and
+.Dv CLOCK_UPTIME .
+See
+.Xr clock_gettime 2
+for a description of each clock.
+.Pp
+If
+.Fa flags
+is 0,
+.Fa timeout
+is a relative interval, as with
+.Fn nanosleep .
+A relative sleep on
+.Dv CLOCK_REALTIME
+is not affected by changes to the realtime clock.
+.Pp
+If
+.Fa flags
+is
+.Dv TIMER_ABSTIME ,
+.Fa timeout
+is an absolute time and the calling thread sleeps until the clock
+reaches it.
+If the clock has already reached
+.Fa timeout ,
+.Fn clock_nanosleep
+returns immediately.
+If
+.Dv CLOCK_REALTIME
+is set while the thread sleeps, the new value of the clock is used.
+.Fa remainder
+is not used for an absolute sleep.
 .Sh RETURN VALUES
 If
 .Fn nanosleep
@@ -81,6 +132,19 @@ Otherwise,
 returns \-1 and the global variable
 .Va errno
 is set to indicate the error.
+.Pp
+.Fn clock_nanosleep
+does not set
+.Va errno .
+It returns 0 if it sleeps the full
+.Fa timeout ,
+or the error number otherwise.
+For a relative sleep interrupted by a signal,
+.Fa remainder
+is set to the unslept portion of the
+.Fa timeout
+unless it is
+.Dv NULL .
 .Sh ERRORS
 .Fn nanosleep
 will fail if:
@@ -101,14 +165,37 @@ is not
 .Dv NULL
 and points to memory that is not a valid part of the process address space.
 .El
+.Pp
+In addition,
+.Fn clock_nanosleep
+will fail if:
+.Bl -tag -width Er
+.It Bq Er EINVAL
+.Fa clock_id
+is not a known clock or is the CPU-time clock of the calling thread.
+.It Bq Er EINVAL
+.Fa flags
+contains a value other than
+.Dv TIMER_ABSTIME .
+.It Bq Er ENOTSUP
+.Fa clock_id
+is a CPU-time clock of another thread or of the process.
+.El
+.Pp
+For an absolute sleep, a negative second value in
+.Fa timeout
+is not an error.
 .Sh SEE ALSO
 .Xr sleep 1 ,
+.Xr clock_gettime 2 ,
 .Xr sigaction 2 ,
 .Xr sleep 3
 .Sh STANDARDS
 The
 .Fn nanosleep
-function conforms to
+and
+.Fn clock_nanosleep
+functions conform to
 .St -p1003.1-2008 .
 .Sh HISTORY
 The predecessor of this system call,
@@ -133,3 +220,10 @@ first appeared in
 .Nx 1.3
 and was ported to
 .Ox 2.1 .
+.Pp
+The
+.Fn clock_nanosleep
+function first appeared in
+.St -p1003.1-2001
+and has been available since
+.Ox 8.1 .

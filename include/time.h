@@ -154,6 +154,8 @@ int nanosleep(const struct timespec *, struct timespec *);
 
 #if __POSIX_VISIBLE >= 200112
 int clock_getcpuclockid(pid_t, clockid_t *);
+int clock_nanosleep(clockid_t, int, const struct timespec *,
+    struct timespec *);
 #endif
 
 #if __POSIX_VISIBLE >= 200809

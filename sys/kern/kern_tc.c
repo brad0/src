@@ -565,6 +565,8 @@ tc_setrealtimeclock(const struct timespec *ts)
 		    (long long)tmp.tv_sec, tmp.tv_nsec,
 		    (long long)ts->tv_sec, ts->tv_nsec);
 	}
+
+	clock_stepped();
 }
 
 /*
@@ -615,6 +617,8 @@ tc_setclock(const struct timespec *ts)
 		timeout_adjust_ticks(adj_ticks);
 	}
 #endif
+
+	clock_stepped();
 }
 
 void

@@ -612,6 +612,7 @@ static void (*formatters[])(int) = {
 	futexflagname,
 	waitidoptname,
 	idtypeandid,
+	timerflagsname,
 };
 
 enum {
@@ -698,6 +699,7 @@ enum {
 	Futexflagname,
 	Waitidoptname,
 	Idtypeandid,
+	Timerflagsname,
 };
 
 #define Pptr		Phexlong
@@ -838,6 +840,7 @@ static const formatter scargs[][8] = {
     [SYS_setreuid]	= { Uidname, Uidname },
     [SYS_setregid]	= { Gidname, Gidname },
     [SYS_rename]	= { Ppath, Ppath },
+    [SYS_clock_nanosleep] = { Clockname, Timerflagsname, Pptr, Pptr },
     [SYS_flock]		= { Pfd, Flockname },
     [SYS_mkfifo]	= { Ppath, Modename },
     [SYS_sendto]	= { Pfd, Pptr, Pbigsize, Sendrecvflagsname },

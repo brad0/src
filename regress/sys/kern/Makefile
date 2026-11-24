@@ -2,7 +2,7 @@
 
 SUBDIR+= accept access
 SUBDIR+= bind
-SUBDIR+= clock_gettime cmsgsize
+SUBDIR+= clock_gettime clock_nanosleep cmsgsize
 SUBDIR+= descrip dup2 dup2_accept dup2_self
 SUBDIR+= exec_self execve exit extent
 SUBDIR+= fchdir fchown fcntl_dup flock fork-exit ftruncate futex

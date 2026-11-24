@@ -130,6 +130,7 @@ const uint64_t pledge_syscalls[SYS_MAXSYSCALL] = {
 	[SYS_issetugid] = PLEDGE_STDIO,
 	[SYS_clock_getres] = PLEDGE_STDIO,
 	[SYS_clock_gettime] = PLEDGE_STDIO,
+	[SYS_clock_nanosleep] = PLEDGE_STDIO,
 	[SYS_getpid] = PLEDGE_STDIO,
 
 	/*

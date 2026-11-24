@@ -46,6 +46,7 @@ void mmapprotname(int);
 void mmapflagsname(int);
 void wait4optname(int);
 void waitidoptname(int);
+void timerflagsname(int);
 void sendrecvflagsname(int);
 void getfsstatflagsname(int);
 void mountflagsname(int);

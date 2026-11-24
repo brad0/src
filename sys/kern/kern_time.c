@@ -330,6 +330,134 @@ sys_nanosleep(struct proc *p, void *v, register_t *retval)
 	return error;
 }
 
+/*
+ * Wait channel for clock_nanosleep(2).  Sleepers are woken up whenever
+ * the realtime or monotonic clock is stepped so they can recheck their
+ * deadline.
+ */
+int clock_nanosleep_chan;
+
+void
+clock_stepped(void)
+{
+	wakeup(&clock_nanosleep_chan);
+}
+
+int
+sys_clock_nanosleep(struct proc *p, void *v, register_t *retval)
+{
+	struct sys_clock_nanosleep_args /* {
+		syscallarg(clockid_t) clock_id;
+		syscallarg(int) flags;
+		syscallarg(const struct timespec *) rqtp;
+		syscallarg(struct timespec *) rmtp;
+	} */ *uap = v;
+	struct timespec deadline, now, remainder, request;
+	struct timespec *rmtp;
+	struct proc *q;
+	clockid_t base, clock_id;
+	uint64_t nsecs;
+	int abstime, copyout_error, error, flags;
+
+	clock_id = SCARG(uap, clock_id);
+	flags = SCARG(uap, flags);
+	rmtp = SCARG(uap, rmtp);
+
+	if (flags & ~TIMER_ABSTIME)
+		return (EINVAL);
+	abstime = (flags & TIMER_ABSTIME) != 0;
+
+	switch (clock_id) {
+	case CLOCK_REALTIME:
+		/*
+		 * A relative sleep is not affected by setting the
+		 * realtime clock, so measure it against the monotonic
+		 * clock instead.
+		 */
+		base = abstime ? CLOCK_REALTIME : CLOCK_MONOTONIC;
+		break;
+	case CLOCK_MONOTONIC:
+	case CLOCK_BOOTTIME:
+	case CLOCK_UPTIME:
+		base = clock_id;
+		break;
+	case CLOCK_THREAD_CPUTIME_ID:
+		/* The calling thread's own CPU-time clock. */
+		return (EINVAL);
+	case CLOCK_PROCESS_CPUTIME_ID:
+		return (ENOTSUP);
+	default:
+		/* check for clock from pthread_getcpuclockid() */
+		if (__CLOCK_TYPE(clock_id) == CLOCK_THREAD_CPUTIME_ID) {
+			KERNEL_LOCK();
+			q = tfind_user(__CLOCK_PTID(clock_id), p->p_p);
+			KERNEL_UNLOCK();
+			if (q == NULL || q == p)
+				return (EINVAL);
+			return (ENOTSUP);
+		}
+		return (EINVAL);
+	}
+
+	error = copyin(SCARG(uap, rqtp), &request, sizeof(request));
+	if (error)
+		return (error);
+#ifdef KTRACE
+	if (KTRPOINT(p, KTR_STRUCT)) {
+		if (abstime)
+			ktrabstimespec(p, &request);
+		else
+			ktrreltimespec(p, &request);
+	}
+#endif
+
+	if (!timespecisvalid(&request))
+		return (EINVAL);
+	if (!abstime && request.tv_sec < 0)
+		return (EINVAL);
+
+	clock_gettime(p, base, &now);
+	if (abstime)
+		deadline = request;
+	else if (request.tv_sec >= INT64_MAX - now.tv_sec) {
+		deadline.tv_sec = INT64_MAX;
+		deadline.tv_nsec = 999999999;
+	} else
+		timespecadd(&now, &request, &deadline);
+
+	error = 0;
+	while (timespeccmp(&now, &deadline, <)) {
+		timespecsub(&deadline, &now, &remainder);
+		nsecs = MAX(1, MIN(TIMESPEC_TO_NSEC(&remainder), MAXTSLP));
+		error = tsleep_nsec(&clock_nanosleep_chan, PWAIT | PCATCH,
+		    "clknslp", nsecs);
+		clock_gettime(p, base, &now);
+		if (error == EWOULDBLOCK)
+			error = 0;
+		if (error)
+			break;
+	}
+
+	if (error == ERESTART)
+		error = EINTR;
+
+	/* The remaining time is only returned for a relative sleep. */
+	if (error == EINTR && !abstime && rmtp != NULL) {
+		memset(&remainder, 0, sizeof(remainder));
+		if (timespeccmp(&now, &deadline, <))
+			timespecsub(&deadline, &now, &remainder);
+		copyout_error = copyout(&remainder, rmtp, sizeof(remainder));
+		if (copyout_error)
+			error = copyout_error;
+#ifdef KTRACE
+		if (copyout_error == 0 && KTRPOINT(p, KTR_STRUCT))
+			ktrreltimespec(p, &remainder);
+#endif
+	}
+
+	return (error);
+}
+
 int
 sys_gettimeofday(struct proc *p, void *v, register_t *retval)
 {
