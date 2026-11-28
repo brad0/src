@@ -1473,8 +1473,9 @@ uvm_fault_lower(struct uvm_faultinfo *ufi, struct uvm_faultctx *flt,
 			atomic_clearbits_int(&pg->pg_flags,
 			    PG_BUSY|PG_FAKE|PG_WANTED);
 			UVM_PAGE_OWN(pg, NULL);
-			uvmfault_unlockall(ufi, amap, uobj);
+			anon->an_ref--;
 			uvm_anfree(anon);
+			uvmfault_unlockall(ufi, amap, uobj);
 			counters_inc(uvmexp_counters, flt_noamap);
 
 			if (uvm_swapisfull())
